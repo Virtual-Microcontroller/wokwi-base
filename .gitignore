@@ -1,0 +1,9 @@
+*.o
+*.elf
+*.hex
+*.map
+*.bin
+wokwi-logs/
+__pycache__/
+wokwi.vcd
+serial.log

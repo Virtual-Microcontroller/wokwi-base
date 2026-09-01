@@ -1,0 +1,178 @@
+name: build-wokwi
+
+# Reusable. Student repositories call this instead of carrying their own copy,
+# so a fix here reaches every repository on its next push rather than only
+# repositories created afterwards.
+#
+# `actions/checkout` below checks out the CALLER's repository: in a reusable
+# workflow the github context always refers to the caller, so this builds the
+# student's firmware, not this repo's.
+on:
+  workflow_call:
+    inputs:
+      toolchain-release:
+        description: GNU Arm Embedded Toolchain release used to compile.
+        type: string
+        default: '14.2.Rel1'
+      expect-text:
+        description: >-
+          String the firmware must print on the serial line. Empty, the
+          default, means any serial output passes and only silence fails. Set
+          it only when an exercise requires exact text: every exercise prints
+          something different, so a shared default is wrong for all but one of
+          them.
+
+          Note that setting it is also cheaper. With an expected string the
+          simulation stops the moment the text appears; without one it has no
+          early exit and always runs to the timeout.
+        type: string
+        default: ''
+      timeout-ms:
+        description: >-
+          How long the simulation may run. This is the price of every run when
+          no expected text is set, and the price of a failure when it is, so it
+          is deliberately lower than the action's own 10000 ms default.
+        type: string
+        default: '2000'
+      artifact-retention-days:
+        description: How long to keep app.elf. The backend downloads it at once.
+        type: number
+        default: 7
+    secrets:
+      WOKWI_CLI_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Check sources are UTF-8
+        run: |
+          set -euo pipefail
+
+          # Hints are written into these files in Japanese, so the sources
+          # carry non-ASCII bytes. A Japanese Windows editor that re-saves as
+          # Shift-JIS would mangle them, and -Werror would then turn the
+          # assistant's own help into a build error the student did not cause
+          # and cannot read. Fail here instead, before the compiler, with a
+          # message that says what to do.
+          python3 - <<'PY'
+          import pathlib, subprocess, sys
+
+          # Every tracked file, not a list of extensions. A student writes
+          # comments wherever they are working, and the non-C files fail
+          # worse: a Shift-JIS byte 0x5C in a Makefile is a line continuation
+          # that swallows the next line, and json.load simply refuses.
+          out = subprocess.run(['git', 'ls-files', '-z'],
+                               capture_output=True, check=True).stdout
+          tracked = [pathlib.Path(p.decode('utf8', 'surrogateescape'))
+                     for p in out.split(b'\0') if p]
+
+          bad, checked = [], 0
+          for path in tracked:
+              if not path.is_file():
+                  continue
+              data = path.read_bytes()
+              # git's own heuristic for "binary": a NUL byte near the start.
+              if b'\0' in data[:8000]:
+                  continue
+              checked += 1
+              try:
+                  data.decode('utf8')
+              except UnicodeDecodeError as e:
+                  bad.append((path, e.start))
+
+          for path, off in bad:
+              print(f'::error file={path}::{path} は UTF-8 ではありません'
+                    f'（{off} バイト目）。UTF-8 で保存し直してください。'
+                    f' / not valid UTF-8 at byte {off}; re-save the file as UTF-8')
+          if bad:
+              print('VS Code: 右下のエンコーディング表示 '
+                    '-> Save with Encoding -> UTF-8')
+              sys.exit(1)
+          print(f'all {checked} tracked text files are valid UTF-8')
+          PY
+
+      - name: Install ARM toolchain
+        uses: carlosperate/arm-none-eabi-gcc-action@98c40e51546516419841748d3210c290df0d2c6c # v1.13.0
+        with:
+          release: ${{ inputs.toolchain-release }}
+
+      # This step is named "Build" on purpose. The hint workflow reads the
+      # conclusion of a step with exactly this name to tell a compile failure,
+      # which is worth explaining to a student, from an infrastructure failure,
+      # which is not. Renaming it silently costs a hint.
+      - name: Build
+        run: make
+
+      # Everything below is only reached when the compile succeeded, because a
+      # failed step ends the job. Firmware that does not link is never
+      # simulated and therefore never costs simulation time -- which makes a
+      # compile error the cheapest failure this pipeline has.
+      #
+      # WOKWI_SIM_ENABLED is a repository variable on the CALLER, not a secret.
+      # Setting it to the string false stops every simulation in that
+      # repository without editing a workflow or revoking a token.
+
+      # The exact-text path. Cheap, because the run stops the moment the text
+      # appears rather than waiting out the timeout.
+      - name: Simulate, expecting exact text
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text != ''
+        uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
+        with:
+          token: ${{ secrets.WOKWI_CLI_TOKEN }}
+          path: /
+          timeout: ${{ inputs.timeout-ms }}
+          expect_text: ${{ inputs.expect-text }}
+          serial_log_file: 'serial.log'
+
+      # The default path: any output passes, silence fails. wokwi-cli has no
+      # "any output" mode, so the run is allowed to reach its timeout and the
+      # captured log is judged afterwards. continue-on-error is what lets the
+      # timeout be an ordinary outcome here rather than a failure -- the CLI
+      # exits 42 when nothing ended the simulation, and that is expected.
+      - name: Simulate, accepting any output
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
+        continue-on-error: true
+        uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
+        with:
+          token: ${{ secrets.WOKWI_CLI_TOKEN }}
+          path: /
+          timeout: ${{ inputs.timeout-ms }}
+          serial_log_file: 'serial.log'
+
+      # What this catches is silence: firmware that compiles cleanly and says
+      # nothing at all. That is a real bug and an easy one to write -- a
+      # main() that never reaches uart_puts, for instance -- and nothing else
+      # in the pipeline would notice it.
+      - name: Check the firmware said something
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
+        run: |
+          set -euo pipefail
+          if [ ! -s serial.log ]; then
+            echo "::error::the firmware produced no serial output at all"
+            exit 1
+          fi
+          echo "serial output: $(wc -c < serial.log) bytes"
+          cat serial.log
+
+      # Kept even when the simulation failed: the serial log is the whole
+      # evidence of what the firmware did, and it is what makes a silent
+      # failure diagnosable at all.
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: firmware
+          path: |
+            app.elf
+            app.hex
+            serial.log
+          if-no-files-found: warn
+          retention-days: ${{ inputs.artifact-retention-days }}

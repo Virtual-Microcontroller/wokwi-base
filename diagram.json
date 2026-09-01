@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "author": "Virtual-Microcontroller",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-stm32-bluepill", "id": "mcu", "top": 0, "left": 0, "attrs": {} },
+
+    { "type": "wokwi-resistor", "id": "r1", "top": 137, "left": 125, "attrs": { "value": "220" } },
+    { "type": "wokwi-led", "id": "led1", "top": 131, "left": 215, "attrs": { "color": "red" } },
+
+    { "type": "wokwi-pushbutton", "id": "btn1", "top": 205, "left": 125, "attrs": { "color": "green" } },
+
+    { "type": "wokwi-logic-analyzer", "id": "logic1", "top": 340, "left": -20, "attrs": {} }
+  ],
+  "connections": [
+    [ "mcu:A1", "r1:1", "green", [] ],
+    [ "r1:2", "led1:A", "green", [] ],
+    [ "led1:C", "mcu:GND.2", "black", [ "v-120", "h-210" ] ],
+
+    [ "btn1:1.l", "mcu:A0", "blue", [] ],
+    [ "btn1:2.l", "mcu:GND.1", "black", [ "v90", "h-290" ] ],
+
+    [ "mcu:A9", "$serialMonitor:RX", "green", [] ],
+    [ "mcu:A10", "$serialMonitor:TX", "green", [] ],
+
+    [ "logic1:D0", "mcu:A9", "purple", [ "h-60", "v-320" ] ],
+    [ "logic1:D1", "mcu:C13", "magenta", [ "h-40", "v-60" ] ],
+    [ "logic1:GND", "mcu:GND.3", "black", [ "h-80", "v-200" ] ]
+  ]
+}

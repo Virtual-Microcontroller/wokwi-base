@@ -1,0 +1,38 @@
+name: Build Hints
+
+# Writes hints INTO the student's source as /* AI-HINT: ... */ lines and
+# pushes them to their branch, so help waits in the editor after a pull.
+#
+# Trigger only. workflow_run cannot be delegated -- it must be declared in the
+# repository that reacts to the event -- so this file stays here while the
+# behaviour lives in the course template. Editing this file is rarely what you
+# want; change build-hints-impl.yml in Virtual-Microcontroller/wokwi-base.
+on:
+  workflow_run:
+    workflows: [build]
+    types: [completed]
+
+# Declared here because a called workflow may reduce permissions but never
+# elevate them. The body needs contents: write to push markers.
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: hints-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  hints:
+    # Three gates before the body is even called:
+    #   the build actually failed;
+    #   an instructor has not switched assistance off for this repository;
+    #   the commit was not made by the bot itself, which is what stops the
+    #     assistant from answering its own push.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      vars.AI_HINTS_ENABLED != 'false' &&
+      github.event.workflow_run.head_commit.author.name != 'github-actions[bot]'
+    uses: Virtual-Microcontroller/wokwi-base/.github/workflows/build-hints-impl.yml@main
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

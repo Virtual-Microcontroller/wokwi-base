@@ -1,0 +1,35 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A student pushing three fixes in a row should pay for one simulation, not
+# three. This matters more here than on a free simulator: the account that owns
+# WOKWI_CLI_TOKEN has a fixed number of simulation minutes per month, shared by
+# every repository using that token.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # The build itself lives in the course template so a fix reaches every
+    # student repository on its next push. Editing this file is rarely what you
+    # want -- change build-wokwi.yml in Virtual-Microcontroller/wokwi-base.
+    # `uses:` cannot take an expression, so the org and template repo are
+    # hardcoded. Change this line if you deploy the course elsewhere.
+    uses: Virtual-Microcontroller/wokwi-base/.github/workflows/build-wokwi.yml@main
+    # Passed through from repository variables so an exercise is configured by
+    # setting a variable rather than by editing YAML. Both are optional: unset
+    # means any serial output passes and only silence fails.
+    with:
+      expect-text: ${{ vars.WOKWI_EXPECT_TEXT }}
+      timeout-ms: ${{ vars.WOKWI_TIMEOUT_MS || '2000' }}
+    # Passed explicitly rather than `secrets: inherit`: the build needs this
+    # one and has no business seeing the AI key.
+    secrets:
+      WOKWI_CLI_TOKEN: ${{ secrets.WOKWI_CLI_TOKEN }}
