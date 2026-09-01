@@ -120,6 +120,24 @@ jobs:
       # Setting it to the string false stops every simulation in that
       # repository without editing a workflow or revoking a token.
 
+      # Fail early and say why. Without this the CLI exits with "Missing
+      # WOKWI_CLI_TOKEN", the permissive path swallows that, and the check
+      # below then reports that the firmware was silent -- which is untrue,
+      # because the firmware was never run at all. The assistant would take
+      # that at face value, spend one of the repository's daily allowance, and
+      # hand the student a confident hint about a bug they do not have.
+      - name: Check the simulator token is present
+        if: vars.WOKWI_SIM_ENABLED != 'false'
+        env:
+          TOKEN: ${{ secrets.WOKWI_CLI_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::WOKWI_CLI_TOKEN is not set on this repository, so the firmware cannot be simulated. This is a configuration fault, not a fault in the code. An administrator installs it with: gh secret set WOKWI_CLI_TOKEN --repo <owner>/<repo>"
+            exit 1
+          fi
+          echo "simulator token is present"
+
       # The exact-text path. Cheap, because the run stops the moment the text
       # appears rather than waiting out the timeout.
       - name: Simulate, expecting exact text
@@ -138,6 +156,7 @@ jobs:
       # timeout be an ordinary outcome here rather than a failure -- the CLI
       # exits 42 when nothing ended the simulation, and that is expected.
       - name: Simulate, accepting any output
+        id: sim_any
         if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
         continue-on-error: true
         uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
@@ -151,14 +170,29 @@ jobs:
       # nothing at all. That is a real bug and an easy one to write -- a
       # main() that never reaches uart_puts, for instance -- and nothing else
       # in the pipeline would notice it.
+      #
+      # Two failures look alike from here and must not be confused. If the
+      # simulator never ran, nothing whatever is known about the firmware, and
+      # calling it silent would be a confident false statement that the
+      # assistant then teaches from. Only blame the code when the simulator
+      # actually reported on it, which is what the absence of a log file
+      # distinguishes: the CLI writes it as output arrives, so no file means no
+      # run, while an empty file means a run that heard nothing.
       - name: Check the firmware said something
         if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
         run: |
           set -euo pipefail
+
+          if [ ! -f serial.log ]; then
+            echo "::error::the simulator did not run, so nothing is known about the firmware. This is a configuration or infrastructure fault rather than a fault in the code -- read the Simulate step above for the reason."
+            exit 1
+          fi
+
           if [ ! -s serial.log ]; then
             echo "::error::the firmware produced no serial output at all"
             exit 1
           fi
+
           echo "serial output: $(wc -c < serial.log) bytes"
           cat serial.log
 
