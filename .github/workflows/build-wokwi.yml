@@ -27,6 +27,21 @@ on:
           early exit and always runs to the timeout.
         type: string
         default: ''
+      scenario:
+        description: >-
+          Path to an automation scenario, relative to the project directory.
+          Empty, the default, means no scenario.
+
+          A scenario is a list of steps -- wait for serial output, press a
+          control, assert a pin -- so it can check behaviour that text alone
+          cannot, such as whether a switch actually lit an LED. It takes
+          precedence over expect-text, because a scenario does its own
+          asserting.
+
+          It should also be the cheapest of the three modes: the run ends when
+          the last step completes rather than waiting out the timeout.
+        type: string
+        default: ''
       timeout-ms:
         description: >-
           How long the simulation may run. This is the price of every run when
@@ -138,10 +153,23 @@ jobs:
           fi
           echo "simulator token is present"
 
+      # The scenario path. A scenario asserts for itself -- it can press a
+      # control and read a pin, which neither of the other two modes can -- so
+      # it takes precedence and no expected text is passed alongside it.
+      - name: Simulate, running a scenario
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.scenario != ''
+        uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
+        with:
+          token: ${{ secrets.WOKWI_CLI_TOKEN }}
+          path: /
+          timeout: ${{ inputs.timeout-ms }}
+          scenario: ${{ inputs.scenario }}
+          serial_log_file: 'serial.log'
+
       # The exact-text path. Cheap, because the run stops the moment the text
       # appears rather than waiting out the timeout.
       - name: Simulate, expecting exact text
-        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text != ''
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.scenario == '' && inputs.expect-text != ''
         uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
         with:
           token: ${{ secrets.WOKWI_CLI_TOKEN }}
@@ -157,7 +185,7 @@ jobs:
       # exits 42 when nothing ended the simulation, and that is expected.
       - name: Simulate, accepting any output
         id: sim_any
-        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.scenario == '' && inputs.expect-text == ''
         continue-on-error: true
         uses: wokwi/wokwi-ci-action@11ddc3fe66a14fcd46683fb21ae5c77657ad4606 # v1.2.0
         with:
@@ -179,7 +207,7 @@ jobs:
       # distinguishes: the CLI writes it as output arrives, so no file means no
       # run, while an empty file means a run that heard nothing.
       - name: Check the firmware said something
-        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.expect-text == ''
+        if: vars.WOKWI_SIM_ENABLED != 'false' && inputs.scenario == '' && inputs.expect-text == ''
         run: |
           set -euo pipefail
 

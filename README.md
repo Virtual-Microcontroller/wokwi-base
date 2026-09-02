@@ -75,6 +75,10 @@ Start Simulator.*
   タイムアウトは既定で 2 秒、リポジトリ変数 `WOKWI_TIMEOUT_MS` で変えられます。
 - 正確な文字列が必要な課題では、リポジトリ変数 `WOKWI_EXPECT_TEXT` を
   設定してください。その文字列が出た瞬間に終了するので 1 秒未満で済みます。
+- シナリオ（`scenario.yaml`）を使う課題では、リポジトリ変数 `WOKWI_SCENARIO`
+  にそのパスを設定してください。シナリオはスイッチを押して LED のピンを
+  確認するなど、シリアル出力だけでは分からない動作を検査できます。最後の
+  ステップが終わった時点で終了するので、3 つのモードの中で最も安価です。
 - 続けて push すると、古い実行は取り消され、1 回分だけが課金されます。
 - リポジトリ変数 `WOKWI_SIM_ENABLED` を `false` にすると、シミュレーションを
   すべて止められます。ワークフローを編集する必要はありません。
@@ -88,7 +92,11 @@ simulated. By default any serial output passes and only silence fails — no
 expected string is written into the workflow, because every exercise prints
 something different. That default cannot stop early, so every run lasts until
 the timeout, which is 2 seconds and set by `WOKWI_TIMEOUT_MS`. An exercise
-needing exact output sets `WOKWI_EXPECT_TEXT` and gets the early exit back.
+needing exact output sets `WOKWI_EXPECT_TEXT` and gets the early exit back. An
+exercise needing to check behaviour rather than text -- press a switch, read an
+LED pin -- writes a `scenario.yaml` and points `WOKWI_SCENARIO` at it; a
+scenario ends when its last step completes, which makes it the cheapest of the
+three modes.
 Repeated pushes are billed once. Set `WOKWI_SIM_ENABLED` to `false` to stop
 simulating entirely. `make sim` is metered too — check in the VS Code extension
 first.*

@@ -28,6 +28,7 @@ jobs:
     # means any serial output passes and only silence fails.
     with:
       expect-text: ${{ vars.WOKWI_EXPECT_TEXT }}
+      scenario: ${{ vars.WOKWI_SCENARIO }}
       timeout-ms: ${{ vars.WOKWI_TIMEOUT_MS || '2000' }}
     # Passed explicitly rather than `secrets: inherit`: the build needs this
     # one and has no business seeing the AI key.
